@@ -2,45 +2,64 @@ import tkinter as tk
 from tkinter import messagebox
 import random
 import time
-import pickle
 import json
 import os
 
-class QAgent:
-    def __init__(self, epsilon=0.1, alpha=0.5, gamma=0.9):
-        self.q_table = {}
-        self.epsilon = epsilon  # Exploration rate
-        self.alpha = alpha  # Learning rate
-        self.gamma = gamma  # Discount factor
+class MinimaxAgent:
+    def __init__(self):
+        pass
 
-    def get_q_value(self, state, action):
-        return self.q_table.get((state, action), 0.0)
+    def minimax(self, board, depth, is_maximizing):
+        winner = self.check_winner(board)
+        if winner == "O":
+            return 1
+        elif winner == "X":
+            return -1
+        elif "" not in board:
+            return 0
 
-    def choose_action(self, state, available_actions):
-        if random.random() < self.epsilon:
-            return random.choice(available_actions)
+        if is_maximizing:
+            best_score = -float('inf')
+            for i in range(9):
+                if board[i] == "":
+                    board[i] = "O"
+                    score = self.minimax(board, depth + 1, False)
+                    board[i] = ""
+                    best_score = max(score, best_score)
+            return best_score
         else:
-            q_values = [self.get_q_value(state, a) for a in available_actions]
-            max_q = max(q_values)
-            best_actions = [a for a, q in zip(available_actions, q_values) if q == max_q]
-            return random.choice(best_actions)
+            best_score = float('inf')
+            for i in range(9):
+                if board[i] == "":
+                    board[i] = "X"
+                    score = self.minimax(board, depth + 1, True)
+                    board[i] = ""
+                    best_score = min(score, best_score)
+            return best_score
 
-    def learn(self, state, action, reward, next_state):
-        old_q = self.get_q_value(state, action)
-        next_max_q = max([self.get_q_value(next_state, a) for a in range(9) if next_state[a] == ''])
-        new_q = old_q + self.alpha * (reward + self.gamma * next_max_q - old_q)
-        self.q_table[(state, action)] = new_q
+    def choose_action(self, board):
+        best_score = -float('inf')
+        best_move = None
+        for i in range(9):
+            if board[i] == "":
+                board[i] = "O"
+                score = self.minimax(board, 0, False)
+                board[i] = ""
+                if score > best_score:
+                    best_score = score
+                    best_move = i
+        return best_move
 
-    def save_q_table(self, filename='q_table.pkl'):
-        with open(filename, 'wb') as f:
-            pickle.dump(self.q_table, f)
-
-    def load_q_table(self, filename='q_table.pkl'):
-        try:
-            with open(filename, 'rb') as f:
-                self.q_table = pickle.load(f)
-        except FileNotFoundError:
-            print("Q-table file not found. Starting with an empty Q-table.")
+    def check_winner(self, board):
+        win_combinations = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],  # Rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],  # Columns
+            [0, 4, 8], [2, 4, 6]  # Diagonals
+        ]
+        for combo in win_combinations:
+            if board[combo[0]] == board[combo[1]] == board[combo[2]] != "":
+                return board[combo[0]]
+        return None
 
 class TicTacToe:
     def __init__(self, master):
@@ -56,8 +75,7 @@ class TicTacToe:
         self.timer = None
         self.time_left = 10
 
-        self.agent = QAgent()
-        self.agent.load_q_table()
+        self.agent = MinimaxAgent()
 
         self.create_widgets()
 
@@ -84,11 +102,11 @@ class TicTacToe:
         self.timer_label.pack()
 
         self.mode_button = tk.Button(self.master, text="Mode: vs AI", font=("Roboto", 12), command=self.toggle_mode,
-                                     bg="#0F3460", fg="white", activebackground="#E94560")
+                                     bg="#0F3460", fg="black", activebackground="#E94560")
         self.mode_button.pack(pady=5)
 
         self.reset_button = tk.Button(self.master, text="Reset Game", font=("Roboto", 12), command=self.reset_game,
-                                      bg="#0F3460", fg="white", activebackground="#E94560")
+                                      bg="#0F3460", fg="black", activebackground="#E94560")
         self.reset_button.pack(pady=5)
 
         self.start_timer()
@@ -111,17 +129,12 @@ class TicTacToe:
             self.status_label.config(text=f"Player {self.current_player} wins!")
             messagebox.showinfo("Game Over", f"Player {self.current_player} wins!")
             self.stop_timer()
-            if self.against_ai:
-                reward = 1 if self.current_player == "O" else -1
-                self.agent.learn(tuple(self.board), move, reward, tuple(self.board))
             self.save_game_history()
         elif "" not in self.board:
             self.game_over = True
             self.status_label.config(text="It's a tie!")
             messagebox.showinfo("Game Over", "It's a tie!")
             self.stop_timer()
-            if self.against_ai:
-                self.agent.learn(tuple(self.board), move, 0, tuple(self.board))
             self.save_game_history()
         else:
             self.current_player = "O" if self.current_player == "X" else "X"
@@ -129,9 +142,7 @@ class TicTacToe:
             self.reset_timer()
 
     def ai_move(self):
-        state = tuple(self.board)
-        available_actions = [i for i, v in enumerate(self.board) if v == ""]
-        action = self.agent.choose_action(state, available_actions)
+        action = self.agent.choose_action(self.board)
         self.make_move(action)
 
     def check_winner(self):
@@ -144,10 +155,19 @@ class TicTacToe:
 
     def toggle_mode(self):
         self.against_ai = not self.against_ai
-        self.mode_button.config(text="Mode: vs AI" if self.against_ai else "Mode: 2 Players")
+        new_text = "Mode: vs AI" if self.against_ai else "Mode: 2 Players"
+
+        # Micro transition effect
+        self.mode_button.config(fg="white")
+        self.master.after(100, lambda: self.mode_button.config(fg="black", text=new_text))
+        
         self.reset_game()
 
     def reset_game(self):
+        # Micro transition effect
+        self.reset_button.config(fg="white")
+        self.master.after(100, lambda: self.reset_button.config(fg="black"))
+        
         self.stop_timer()
         self.current_player = "X"
         self.board = [""] * 9
@@ -157,7 +177,6 @@ class TicTacToe:
         self.status_label.config(text="Player X's turn")
         self.reset_timer()
         self.start_timer()
-        self.agent.save_q_table()  # Save the Q-table after each game
 
     def start_timer(self):
         self.time_left = 10
@@ -201,13 +220,14 @@ class TicTacToe:
                 data = json.load(f)
         else:
             data = []
-
+        
         data.append(game_data)
 
         with open(filename, 'w') as f:
             json.dump(data, f, indent=4)
 
+
 if __name__ == "__main__":
     root = tk.Tk()
-    game = TicTacToe(root)
+    app = TicTacToe(root)
     root.mainloop()
